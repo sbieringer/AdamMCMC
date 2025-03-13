@@ -7,8 +7,7 @@ from src.MCMC_weaver_utils import train_classification as train
 
 from weaver.train import train_load, model_setup, optim
 from weaver.utils.nn.tools import evaluate_classification as evaluate
-import shutil
-from argparse import ArgumentParser, ArgumentTypeError
+from argparse import ArgumentParser
 
 
 # %%

@@ -7,9 +7,11 @@ import sys
 sys.path.append('../..')
 
 import time
-import tqdm
 
 class tb_helper_offline():
+    '''
+    Instance of a tensorboard helper, which saves locally instead of backing up into the tensorboard cloud
+    '''
     def __init__(self, scalars, path, batch_train_count=0, batch_val_count=0):
         self.path = path
         self.scalars = {key: np.zeros(scalars[key]) for key in scalars}
@@ -42,6 +44,11 @@ class tb_helper_offline():
 def train_classification_MCMC(
         model, opt, loss_func, MCMC, scheduler, train_loader, dev, epoch, steps_per_epoch=None, grad_scaler=None,
         tb_helper=None, loop_kwargs={}):
+    
+    '''
+    Weaver training script adapted for sampling with AdamMCMC, purged of unnecessary clutter
+    '''
+
     model.train()
 
     data_config = train_loader.dataset.config
@@ -56,7 +63,6 @@ def train_classification_MCMC(
 
     maxed_out_mbb_batches  = 0
 
-   # with tqdm.tqdm(train_loader) as tq:
     for X, y, _ in train_loader:
         start_time_epoch = time.time()
         inputs = [X[k].to(dev) for k in data_config.input_names]
@@ -100,13 +106,6 @@ def train_classification_MCMC(
         total_loss += loss
         total_correct += correct
 
-        # tq.set_postfix({
-        #     'lr': '%.2e' % scheduler.get_last_lr()[0] if scheduler else opt.defaults['lr'],
-        #     'Loss': '%.5f' % loss,
-        #     'AvgLoss': '%.5f' % (total_loss / num_batches),
-        #     'Acc': '%.5f' % (correct / num_examples),
-        #     'AvgAcc': '%.5f' % (total_correct / count)})
-
         time_diff_epoch = time.time() - start_time_epoch - (t2-t1)
         if tb_helper:
             tb_helper.write_scalars([
@@ -149,6 +148,10 @@ def train_classification_MCMC(
 def train_classification(
         model, loss_func, opt, scheduler, train_loader, dev, epoch, steps_per_epoch=None, grad_scaler=None,
         tb_helper=None):
+    '''
+    Weaver training script purged of unnecessary clutter
+    '''
+
     model.train()
 
     data_config = train_loader.dataset.config
@@ -160,7 +163,6 @@ def train_classification(
     entry_count = 0
     count = 0
     start_time = time.time()
-    #with tqdm.tqdm(train_loader) as tq:
     for X, y, _ in train_loader:
         start_time_epoch = time.time()
         inputs = [X[k].to(dev) for k in data_config.input_names]
