@@ -3,47 +3,18 @@ import matplotlib.pyplot as plt
 import torch
 import os
 import tqdm
+from src.MCMC_weaver_utils import tb_helper_offline
+from src.util import mkdir
 
-
-from top_landscape.particle_transformer.dataloader import read_file
-from weaver.train import train_load, test_load, model_setup, optim
-
-def mkdir(save_dir):
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
-    return save_dir
-
-class tb_helper_offline():
-    def __init__(self, scalars, path, batch_train_count=0, batch_val_count=0):
-        self.path = path
-        self.scalars = {key: np.zeros(scalars[key]) for key in scalars}
-
-        self.custom_fn = False
-        self.batch_train_count = batch_train_count
-        self.batch_val_count = batch_val_count
-
-    def write_scalars(self, entry):
-        for scalar_entry in entry:
-            key, val, batch = scalar_entry
-            if key in self.scalars:
-                self.scalars[key][batch] = val
-
-    def set_batch_train_count(self, batch_train_count):
-        self.batch_train_count = batch_train_count
-
-    def set_batch_val_count(self, batch_val_count):
-        self.batch_val_count = batch_val_count
-
-    def save(self):
-        for key in self.scalars:
-            np.save(self.path + key + '.npy', self.scalars[key])
-
-    def load(self):
-        for key in self.scalars:
-            self.scalars[key] = np.load(self.path + key + '.npy')
+from weaver.train import train_load, test_load, model_setup
+from weaver.utils.nn.tools import _flatten_preds
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
+
+#####################
+### intialization ###
+#####################
 
 model_path = './top_landscape/models/'
 data_path = "./top_landscape/data/"
@@ -145,9 +116,10 @@ offline_tb = tb_helper_offline({"Loss/train":  project.steps_per_epoch*project.n
                                 project.model_prefix)
 
 
-from weaver.utils.nn.tools import _flatten_preds
-
 def get_logits_and_labels(model, project, test_loaders = None, data_config = None,  batches = None):
+    '''
+    the evalutation function returning logits predictions and true labels for a model and dataloader
+    '''
     if test_loaders is None or data_config is None:
         test_loaders, data_config = test_load(project)
     for _, get_test_loader in test_loaders.items():
@@ -191,6 +163,10 @@ stepsize = 5
 
 test_loaders, data_config = None, None
 
+#########################################
+### specify the runs to evaluate here ###
+#########################################
+
 lr = 1e-3 
 min_lr = 1e-6
 lr_decay = 1
@@ -208,32 +184,35 @@ sigma_adam_dir =  sum(p.numel() for p in model.parameters())/sigma_adam_dir_deno
 
 path_tmp = model_path + f'/ParticleNet_{optim_str}MCMC_lr{lr}_lrdecay{lr_decay}_temp{temp}_sigma{sigma}_sigmaadam{sigma_adam_dir}_sigmafactor{sigma_factor}/'
 
-if True: #not "post_pred_entropy.npy" in os.listdir(path_tmp):
-    for epoch in range(n_epochs-n_samples*stepsize, n_epochs, stepsize):
-        model.load_state_dict(torch.load(path_tmp + f'_epoch-{epoch}_state.pt'))
+##########################
+### run the evaluation ###
+##########################
 
-        logits, labels, test_loaders, data_config = get_logits_and_labels(model, project, test_loaders, data_config)
+for epoch in range(n_epochs-n_samples*stepsize, n_epochs, stepsize):
+    model.load_state_dict(torch.load(path_tmp + f'_epoch-{epoch}_state.pt'))
 
-        if epoch == n_epochs-n_samples*stepsize:
-            logits_out = logits.unsqueeze(-1)
-        else:
-            logits_out = torch.cat([logits_out, logits.unsqueeze(-1)], -1)
+    logits, labels, test_loaders, data_config = get_logits_and_labels(model, project, test_loaders, data_config)
 
-    mean_logits = torch.mean(logits_out, -1)
-    _, preds = mean_logits.max(1)
-    np.save(path_tmp +"logits_out.npy", logits_out.numpy(force=True))
-    np.save(path_tmp +"mean_logits.npy", mean_logits.numpy(force=True))
-    np.save(path_tmp +"preds.npy", preds.numpy(force=True))
-    np.save(path_tmp +"labels.npy", labels.numpy(force=True))
+    if epoch == n_epochs-n_samples*stepsize:
+        logits_out = logits.unsqueeze(-1)
+    else:
+        logits_out = torch.cat([logits_out, logits.unsqueeze(-1)], -1)
 
-    scores = torch.softmax(logits_out.float(), dim=1).numpy(force=True)+1e-10
-    post_pred = np.mean(scores.astype(np.longdouble), -1)
-    post_pred_entropy = -np.sum(np.nan_to_num(post_pred*np.log(post_pred)), 1)
-    np.save(path_tmp +"post_pred_entropy.npy", post_pred_entropy)
+mean_logits = torch.mean(logits_out, -1)
+_, preds = mean_logits.max(1)
+np.save(path_tmp +"logits_out.npy", logits_out.numpy(force=True))
+np.save(path_tmp +"mean_logits.npy", mean_logits.numpy(force=True))
+np.save(path_tmp +"preds.npy", preds.numpy(force=True))
+np.save(path_tmp +"labels.npy", labels.numpy(force=True))
 
-    log_scores = logits_out.numpy(force=True).astype(np.longdouble) - np.nan_to_num(np.log(np.sum(np.exp(logits_out.numpy(force=True).astype(np.longdouble)), 1, keepdims=True)))
-    entropy_expect = np.mean(-np.sum(scores.astype(np.longdouble)*log_scores, 1), -1)
-    np.save(path_tmp +"entropy_expect.npy", entropy_expect)
+scores = torch.softmax(logits_out.float(), dim=1).numpy(force=True)+1e-10
+post_pred = np.mean(scores.astype(np.longdouble), -1)
+post_pred_entropy = -np.sum(np.nan_to_num(post_pred*np.log(post_pred)), 1)
+np.save(path_tmp +"post_pred_entropy.npy", post_pred_entropy)
 
-    mutual_info = post_pred_entropy - entropy_expect
-    np.save(path_tmp +"mutual_info.npy", mutual_info)
+log_scores = logits_out.numpy(force=True).astype(np.longdouble) - np.nan_to_num(np.log(np.sum(np.exp(logits_out.numpy(force=True).astype(np.longdouble)), 1, keepdims=True)))
+entropy_expect = np.mean(-np.sum(scores.astype(np.longdouble)*log_scores, 1), -1)
+np.save(path_tmp +"entropy_expect.npy", entropy_expect)
+
+mutual_info = post_pred_entropy - entropy_expect
+np.save(path_tmp +"mutual_info.npy", mutual_info)

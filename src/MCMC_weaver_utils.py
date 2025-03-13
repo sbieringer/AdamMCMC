@@ -7,6 +7,7 @@ import sys
 sys.path.append('../..')
 
 import time
+import tqdm
 
 class tb_helper_offline():
     '''
@@ -145,6 +146,109 @@ def train_classification_MCMC(
         scheduler.step()
 
 
+
+def train_classification_sgHMC(
+        model, loss_func, MCMC, scheduler, train_loader, dev, epoch, burn_in, resample_momentum, n_points=1, steps_per_epoch=None,
+        tb_helper=None, grad_scaler=None):
+    
+    '''
+    Weaver training script adapted for sampling with sgHMC, purged of unnecessary clutter
+    '''
+
+    model.train()
+
+    data_config = train_loader.dataset.config
+
+    label_counter = Counter()
+    total_loss = 0
+    num_batches = 0
+    total_correct = 0
+    entry_count = 0
+    count = 0
+    start_time = time.time()
+
+    maxed_out_mbb_batches  = 0
+
+    with tqdm.tqdm(train_loader) as tq:
+        for X, y, _ in tq:
+            inputs = [X[k].to(dev) for k in data_config.input_names]
+            label = y[data_config.label_names[0]].long().to(dev)
+            entry_count += label.shape[0]
+            try:
+                mask = y[data_config.label_names[0] + '_mask'].bool().to(dev)
+            except KeyError:
+                mask = None
+            MCMC.zero_grad()
+            with torch.cuda.amp.autocast(enabled=grad_scaler is not None):
+                model_output = model(*inputs)
+                logits, label, _ = _flatten_preds(model_output, label=label, mask=mask)
+                loss = loss_func(logits, label)*n_points
+
+            loss.backward()
+            
+            t1 = time.time()
+            _ = MCMC.step(burn_in, resample_momentum)
+            resample_momentum = False #set resampling to false for the rest of the epoch
+            t2 = time.time()
+
+            if scheduler and getattr(scheduler, '_update_per_step', False):
+                scheduler.step()
+            if scheduler.get_last_lr()[0] <= getattr(scheduler, 'min_lr', 0):
+                scheduler._update_per_step = False
+
+            _, preds = logits.max(1)
+            loss = loss.item()
+                
+            num_examples = label.shape[0]
+            label_counter.update(label.numpy(force=True))
+            num_batches += 1
+            count += num_examples
+            correct = (preds == label).sum().item()
+            total_loss += loss
+            total_correct += correct
+
+            tq.set_postfix({
+                'lr': '%.2e' % scheduler.get_last_lr()[0] if scheduler else MCMC.defaults['lr'],
+                'Loss': '%.5f' % loss,
+                'AvgLoss': '%.5f' % (total_loss / num_batches),
+                'Acc': '%.5f' % (correct / num_examples),
+                'AvgAcc': '%.5f' % (total_correct / count)})
+
+            if tb_helper:
+                tb_helper.write_scalars([
+                    ("Loss/train", loss, tb_helper.batch_train_count + num_batches),
+                    ("Acc/train", correct / num_examples, tb_helper.batch_train_count + num_batches),
+                    #('Acceptance_rate', a, tb_helper.batch_train_count + num_batches),
+                    ('lr', '%.2e' % scheduler.get_last_lr()[0] if scheduler else MCMC.defaults['lr'], tb_helper.batch_train_count + num_batches),
+                ])
+                if tb_helper.custom_fn:
+                    with torch.no_grad():
+                        tb_helper.custom_fn(model_output=model_output, model=model,
+                                            epoch=epoch, i_batch=num_batches, mode='train')
+
+            if steps_per_epoch is not None and num_batches >= steps_per_epoch:
+                break
+
+    time_diff = time.time() - start_time
+    _logger.info('Processed %d entries in total (avg. speed %.1f entries/s)' % (entry_count, entry_count / time_diff))
+    _logger.info('Train AvgLoss: %.5f, AvgAcc: %.5f' % (total_loss / num_batches, total_correct / count))
+    _logger.info('Train class distribution: \n    %s', str(sorted(label_counter.items())))
+
+    if tb_helper:
+        tb_helper.write_scalars([
+            ("Loss/train (epoch)", total_loss / num_batches, epoch),
+            ("Acc/train (epoch)", total_correct / count, epoch),
+        ])
+        if tb_helper.custom_fn:
+            with torch.no_grad():
+                tb_helper.custom_fn(model_output=model_output, model=model, epoch=epoch, i_batch=-1, mode='train')
+        # update the batch state
+        tb_helper.batch_train_count += num_batches
+
+    if scheduler and not getattr(scheduler, '_update_per_step', False):
+        scheduler.step()
+
+
 def train_classification(
         model, loss_func, opt, scheduler, train_loader, dev, epoch, steps_per_epoch=None, grad_scaler=None,
         tb_helper=None):
@@ -199,13 +303,6 @@ def train_classification(
         correct = (preds == label).sum().item()
         total_loss += loss
         total_correct += correct
-
-        tq.set_postfix({
-            'lr': '%.2e' % scheduler.get_last_lr()[0] if scheduler else opt.defaults['lr'],
-            'Loss': '%.5f' % loss,
-            'AvgLoss': '%.5f' % (total_loss / num_batches),
-            'Acc': '%.5f' % (correct / num_examples),
-            'AvgAcc': '%.5f' % (total_correct / count)})
 
         time_diff_epoch = time.time()-start_time_epoch
         if tb_helper:

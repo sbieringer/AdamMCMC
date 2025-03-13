@@ -28,8 +28,8 @@ Increasing the width of the proposal distribution $\sigma$ allows adapting the u
 ## Structure
 
 The implementation of ParticleNet is created from the [ParT](https://github.com/jet-universe/particle_transformer) implementation  using the `weaver` [package](https://github.com/hqucms/weaver-core). 
-  * <code>src/AdamMCMC.py</code> defines our AdamMCMC implementation and can by used in exchange for your usual PyTorch Optimizer
-  * <code>src/MCMC_weaver_util.py</code> wraps some weaver code for the use with MCMC methods
+  * <code>src/AdamMCMC.py</code> defines our AdamMCMC implementation which can by used in exchange for your usual PyTorch Optimizer
+  * <code>src/MCMC_weaver_util.py</code> wraps the weaver training code for the use with MCMC methods
   * <code>train_METHOD.py</code> can be used for Network training or sampling
   * <code>eval.py</code> calculate the Network output for multiple weigth samples
   * <code>test.ipynb</code>  and <code>src/compare_adammccm_sgHMC.ipynb</code> are used for plotting
@@ -41,6 +41,8 @@ An full instructive example of converting a PyTorch training to AdamMCMC samplin
 ### Initialization
 
 ### Training/sampling loop
+
+### <code>train_METHOD.py</code> arguments
 
 ## Citation
 
