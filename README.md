@@ -135,8 +135,8 @@ for epoch in eps:
 
   * <code>train_MCMC.py</code>:
     - temp: temperature parameter as described in the [paper](https://arxiv.org/abs/2312.14027)
-    - sigma: standard deviation of the proposal distribution $\sigma$ = `sigma`$/\sqrt{\# \vartheta}$
-    - sigma_adam_dir_denom: covariance factor in update direction $\sigma_\Delta$ = `sigma_adam_dir_denom`$/\sqrt{\# \vartheta}$
+    - sigma: standard deviation of the proposal distribution $\sigma$ = `sigma`$/\sqrt{\sharp \vartheta}$
+    - sigma_adam_dir_denom: covariance factor in update direction $\sigma_\Delta$ = `sigma_adam_dir_denom`$/\sqrt{\sharp \vartheta}$
     - optim_str: `"Adam"` or `"SGD"`, sets the PyTorch optimizer used for calculating the update steps
     - beta1_adam: $\beta_1 = \beta_2$ running average parameters of first and second order momentum of Adam (`default=0.99`)
     - bs: batchisze (`default=512`)
