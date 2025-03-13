@@ -131,7 +131,7 @@ for epoch in eps:
   * <code>train_sgHMC.py</code>:
     - lr: learning rate (`default=10^-2`)
     - C: friction term of sgHMC
-    - resample_mom: Enables momentum resampling
+    - resample_mom: enables momentum resampling
 
   * <code>train_MCMC.py</code>:
     - temp: temperature parameter as described in the [paper](https://arxiv.org/abs/2312.14027)
@@ -141,11 +141,11 @@ for epoch in eps:
     - beta1_adam: $\beta_1 = \beta_2$ running average parameters of first and second order momentum of Adam (`default=0.99`)
     - bs: batchisze (`default=512`)
     - lr: learning rate (`default=10^-3`)
-    - full_loss: Enabels using the loss calculated on the full set of data for the Metropolis-Hastings-Correction
+    - full_loss: enabels using the loss calculated on the full set of data for the Metropolis-Hastings-Correction
 
 ## Citation
 
-For more Details see our Publication ["AdamMCMC: Combining Metropolis Adjusted Langevin with Momentum-based Optimization"](https://arxiv.org/abs/2312.14027)
+For more details see our publication ["AdamMCMC: Combining Metropolis Adjusted Langevin with Momentum-based Optimization"](https://arxiv.org/abs/2312.14027)
 
 ```bibtex
 @unpublished{Bieringer_2023_adammcmc,
