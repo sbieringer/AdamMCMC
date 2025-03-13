@@ -4,41 +4,12 @@ import torch
 import os
 
 from src.MCMC_weaver_utils import train_classification as train
+from src.MCMC_weaver_utils import tb_helper_offline
 from src.util import *
 
 from weaver.train import train_load, model_setup, optim
 from weaver.utils.nn.tools import evaluate_classification as evaluate
 from argparse import ArgumentParser
-
-# %%
-class tb_helper_offline():
-    def __init__(self, scalars, path, batch_train_count=0, batch_val_count=0):
-        self.path = path
-        self.scalars = {key: np.zeros(scalars[key]) for key in scalars}
-
-        self.custom_fn = False
-        self.batch_train_count = batch_train_count
-        self.batch_val_count = batch_val_count
-
-    def write_scalars(self, entry):
-        for scalar_entry in entry:
-            key, val, batch = scalar_entry
-            if key in self.scalars:
-                self.scalars[key][batch] = val
-
-    def set_batch_train_count(self, batch_train_count):
-        self.batch_train_count = batch_train_count
-
-    def set_batch_val_count(self, batch_val_count):
-        self.batch_val_count = batch_val_count
-
-    def save(self):
-        for key in self.scalars:
-            np.save(self.path + key + '.npy', self.scalars[key])
-
-    def load(self):
-        for key in self.scalars:
-            self.scalars[key] = np.load(self.path + key + '.npy')
 
 # %%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

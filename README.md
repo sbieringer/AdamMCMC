@@ -40,9 +40,108 @@ An full instructive example of converting a PyTorch training to AdamMCMC samplin
 
 ### Initialization
 
+```python
+import torch
+import torch.nn as nn
+import numpy as np
+
+# For the model
+import normflows as nf
+
+# For MCMC Bayesian
+from src.AdamMCMC import MCMC_by_bp
+
+# For the data
+from sklearn.datasets import make_moons
+
+
+# Define data
+data, _ = make_moons(4096, noise=0.05)
+data = torch.from_numpy(data).float()
+data = data.to(device)
+
+# Define model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+base = nf.distributions.base.DiagGaussian(2)
+num_layers = 5
+flows = []
+for i in range(num_layers):
+    param_map = nf.nets.MLP([1, 32, 32, 2], init_zeros=False)
+    flows.append(nf.flows.AffineCouplingBlock(param_map))
+    flows.append(nf.flows.Permute(2, mode='swap'))
+MCMC_model = nf.NormalizingFlow(base, flows).to(device)
+MCMC_model.device = device
+
+# Initialize AdamMCMC
+epochs = 10001
+batchsize = len(data)
+lr = 1e-3
+temp = 1 #lambda
+sigma = .02 #noise
+loop_kwargs = {
+            'MH': True, #This is a little more than x2 runtime but necessary
+            'verbose': epochs<10,
+            'fixed_batches': True, #set this to True so the loss is calculated 2 times per step, set to False only for batchsize = len(data)
+            'sigma_adam_dir': 800, #choose on the order of the number of parameters of the network
+            'extended_doc_dict': False,
+            'full_loss': None, #second loss function can be passed for exact MH-corrections over the full data
+}
+
+optimizer = torch.optim.Adam(MCMC_model.parameters(), lr=lr, betas=(0.999, 0.999))
+adamMCMC = MCMC_by_bp(MCMC_model, optimizer, temp, sigma)
+
+```
+
 ### Training/sampling loop
 
+```python
+flow_loss_epoch, acc_prob_epoch, accepted_epoch = np.zeros(epochs), np.zeros(epochs),  np.zeros(epochs)
+
+eps = tqdm(range(epochs))
+for epoch in eps:    
+    optimizer.zero_grad()
+
+    perm = torch.randperm(len(data)).to(device)
+    for i_step in range((len(data)-1)//batchsize+1):
+        x = data[perm[i_step*batchsize:(i_step+1)*batchsize].to(device)]
+
+        # Need to definde the loss function as a callable
+        flow_loss = lambda: -torch.sum(MCMC_model.log_prob(x)) 
+        flow_loss_old,accept_prob,accepted,_,_ = adamMCMC.step(flow_loss, **loop_kwargs)
+
+        flow_loss_epoch[epoch] += flow_loss_old.numpy(force=True)/len(x)
+        acc_prob_epoch[epoch] = accept_prob
+        accepted_epoch[epoch] = accepted
+
+        #save the ensemble after some burn-in time (to converge) in sufficiently large intervals
+        #if you loaded a pretrained model, you can also reduce/skip the burn-in
+        if epoch>4999 and epoch%1000==0:
+            torch.save(MCMC_model.state_dict(), f"./models/MCMC_model_{epoch}.pth")
+
+        eps.set_postfix({'flow_loss': flow_loss_old.item()/len(x), 'accept_prob': accept_prob})
+
+```
+
 ### <code>train_METHOD.py</code> arguments
+
+  * <code>train_adam.py</code>:
+    - beta1_adam: $\beta_1 = \beta_2$ running average parameters of first and second order momentum of Adam (`default=0.99`)
+    - batchsize is fixed at $512$ and lr at $10^{-3}$
+
+  * <code>train_sgHMC.py</code>:
+    - lr: learning rate (`default=10^-2`)
+    - C: friction term of sgHMC
+    - resample_mom: Enables momentum resampling
+
+  * <code>train_MCMC.py</code>:
+    - temp: temperature parameter as described in the [paper](https://arxiv.org/abs/2312.14027)
+    - sigma: standard deviation of the proposal distribution $\sigma$ = `sigma`$/\sqrt{\# \vartheta}$
+    - sigma_adam_dir_denom: covariance factor in update direction $\sigma_\Delta$ = `sigma_adam_dir_denom`$/\sqrt{\# \vartheta}$
+    - optim_str: `"Adam"` or `"SGD"`, sets the PyTorch optimizer used for calculating the update steps
+    - beta1_adam: $\beta_1 = \beta_2$ running average parameters of first and second order momentum of Adam (`default=0.99`)
+    - bs: batchisze (`default=512`)
+    - lr: learning rate (`default=10^-3`)
+    - full_loss: Enabels using the loss calculated on the full set of data for the Metropolis-Hastings-Correction
 
 ## Citation
 
